@@ -1,0 +1,375 @@
+name: Stage CI pipeline
+
+on:
+  workflow_call:
+    inputs:
+      dh_name:
+        type: string
+        required: true
+      deploy_repository:
+        type: string
+        required: true
+      deploy_local_path:
+        type: string
+        required: true
+      product_type:
+        type: string
+        required: true
+      
+    secrets:
+      tg_token:
+        required: true
+      tg_chat_id:
+        required: true
+      dh_token:
+        required: true
+      deploy_repo_ssh_key:
+        required: true
+      dd_sec_url:
+        required: true
+      dd_sec_key:
+        required: true
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner in fs mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          ignore-unfixed: false
+          format: 'sarif'
+          output: 'trivy-dependency-report.sarif'
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-report
+          path: ./trivy-dependency-report.sarif
+
+      - name: Send message on failure
+        if:  ${{ failure() }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+
+  codacy-security-scan:
+    name: Codacy Security Scan
+    needs: dependency-review
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Codacy Analysis CLI
+        uses: codacy/codacy-analysis-cli-action@master
+        with:
+          output: code-analysis-report.sarif
+          format: sarif
+          gh-code-scanning-compat: true
+          max-allowed-issues: 2147483647
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: codacy-analysis-report
+          path: ./code-analysis-report.sarif
+
+      - name: Send message on failure
+        if:  ${{ failure() }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+
+  build:
+    name: Build and push docker image
+    needs: dependency-review
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set docker image name
+        run: |
+          echo DOCKER_IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]') >> $GITHUB_ENV
+
+      - name: Docker meta
+        id: docker_meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.DOCKER_IMAGE_NAME }}
+          tags: |
+            type=sha
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ inputs.dh_name }}
+          password: ${{ secrets.dh_token }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          push: true
+          context: .
+          file: ./Dockerfile
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+
+      - name: Send message on failure
+        if: ${{ failure() }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+
+    outputs:
+      docker_tag: ${{ steps.docker_meta.outputs.tags }}
+
+  scan_image:
+    name: Scan docker image
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+
+      - run: echo ${{ needs.build.outputs.docker_tag }}
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ needs.build.outputs.docker_tag }}'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'image-report.sarif'
+        env:
+          TRIVY_USERNAME: ${{ inputs.dh_name }}
+          TRIVY_PASSWORD: ${{ secrets.dh_token }}
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: image-report
+          path: ./image-report.sarif
+
+      - name: Send message on failure
+        if: ${{ failure() }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+
+  update_deploy_repo:
+    name: Update deploy repo
+    needs:
+      - build
+      - scan_image
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Set app name
+        run: |
+          echo APP_NAME=$(awk -F "/" '{print $2}' <<< ${{ github.repository }}) >> $GITHUB_ENV
+
+      - name: Checkout configs repo
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ inputs.deploy_repository }}
+          path: ${{ inputs.deploy_local_path }}
+          ssh-key: ${{ secrets.deploy_repo_ssh_key }}
+
+      - name: Update image version
+        uses: fjogeleit/yaml-update-action@main
+        with:
+          valueFile: 'helm/${{ env.APP_NAME }}/stage-values.yaml'
+          propertyPath: 'deployment.image.tag'
+          value: ${{ needs.build.outputs.docker_tag }}
+          repository: ${{ inputs.deploy_repository }}
+          workDir: ${{ inputs.deploy_local_path }}
+          updateFile: true
+          createPR: false
+          commitChange: false
+
+      - name: Install helm
+        uses: yamaks2306/kube-tools@master
+        with:
+          helm: 3.7.2
+
+      - name: Lint helm
+        run: |
+          helm lint ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}
+
+      - name: Generate manifests with Helm
+        run: | 
+          helm template stage-${{ env.APP_NAME }} ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/stage-values.yaml > ${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/stage/${{ env.APP_NAME }}.yaml
+
+      - name: Run Trivy vulnerability scanner in IaC mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          hide-progress: false
+          format: 'sarif'
+          output: 'manifest-report.sarif'
+          exit-code: '0'
+          scan-ref: '${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/stage/'
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: manifest-report
+          path: ./manifest-report.sarif
+
+      - name: Commit and push changes
+        run: |
+          eval `ssh-agent -s`
+          ssh-add - <<< '${{ secrets.deploy_repo_ssh_key }}'
+          cd ${{ inputs.deploy_local_path }}
+          git config user.name github-action
+          git config user.email github-actions@github.com
+          git add .
+          git commit -m 'Image version updated ${{ needs.build.outputs.docker_tag }}'
+          git push
+
+      - name: Notify Telegram
+        uses: yamaks2306/telegram-notification@main
+        if: always()
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          docker_tags: ${{ needs.build.outputs.docker_tag }}
+
+  upload_reports:
+    name: Upload security reports
+    runs-on: ubuntu-latest
+    needs:
+      - codacy-security-scan
+      - scan_image
+      - update_deploy_repo
+    steps:
+
+      - name: Init 
+        uses: yamaks2306/dd-action@main
+        id: init
+        with:
+          mode: 'init'
+          url: ${{ secrets.dd_sec_url }}
+          token: ${{ secrets.dd_sec_key }}
+          product_type: ${{ inputs.product__type }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: .
+
+      - run: |
+          mv dependency-report/* .
+          mv codacy-analysis-report/* .
+          mv image-report/* .
+          mv manifest-report/* .
+
+      - name: Upload dependency-report
+        uses: yamaks2306/dd-action@main
+        with:
+          mode: 'upload_report'
+          url: ${{ secrets.dd_sec_url }}
+          token: ${{ secrets.dd_sec_key }}
+          engagement_id: ${{ steps.init.outputs.engagement_id }}
+          test_title: 'Dependency'
+          file: 'trivy-dependency-report.sarif'
+
+      - name: Upload code-report
+        uses: yamaks2306/dd-action@main
+        with:
+          mode: 'upload_report'
+          url: ${{ secrets.dd_sec_url }}
+          token: ${{ secrets.dd_sec_key }}
+          engagement_id: ${{ steps.init.outputs.engagement_id }}
+          test_title: 'Code'
+          file: 'code-analysis-report.sarif'
+
+      - name: Upload image-report
+        uses: yamaks2306/dd-action@main
+        with:
+          mode: 'upload_report'
+          url: ${{ secrets.dd_sec_url }}
+          token: ${{ secrets.dd_sec_key }}
+          engagement_id: ${{ steps.init.outputs.engagement_id }}
+          test_title: 'Image'
+          file: 'image-report.sarif'
+
+      - name: Upload manifest-report
+        uses: yamaks2306/dd-action@main
+        with:
+          mode: 'upload_report'
+          url: ${{ secrets.dd_sec_url }}
+          token: ${{ secrets.dd_sec_key }}
+          engagement_id: ${{ steps.init.outputs.engagement_id }}
+          test_title: 'Manifest'
+          file: 'manifest-report.sarif'
+
+      - name: Count vulnerabilities
+        run: |
+          echo "DEPENDENCY_COUNT=$(jq '.runs[].results | length' < ./trivy-dependency-report.sarif)" >> $GITHUB_ENV
+          echo "CODE_ANALYSIS_COUNT=$(jq '[ .runs[].results | length] | add' < ./code-analysis-report.sarif)" >> $GITHUB_ENV
+          echo "IMAGE_COUNT=$(jq '.runs[].results | length' < ./image-report.sarif)" >> $GITHUB_ENV
+          echo "MANIFEST_COUNT=$(jq '.runs[].results | length' < ./manifest-report.sarif)" >> $GITHUB_ENV
+
+      - name: Build message
+        if: ${{ env.DEPENDENCY_COUNT > 0 || env.CODE_ANALYSIS_COUNT > 0 || env.IMAGE_COUNT > 0 || env.MANIFEST_COUNT > 0 }}
+        run: |
+          get_message()
+          {
+          cat <<EOF
+          💥💥💥
+          Repository: ${{ github.repository }}
+          The dependency scan found ${{ env.DEPENDENCY_COUNT }} vulnerabilities.
+          The code analysis scan found ${{ env.CODE_ANALYSIS_COUNT }} vulnerabilities.
+          The image scan found ${{ env.IMAGE_COUNT }} vulnerabilities (CRITICAL and HIGH).
+          The manifest analysis scan found ${{ env.MANIFEST_COUNT }} vulnerabilities.
+          See details: ${{ secrets.DD_SEC_URL }}/engagement/${{ env.DD_ENGAGEMENT_ID }}
+          EOF
+          }
+          echo MESSAGE=$(get_message) >> $GITHUB_ENV
+
+      - name: Send message
+        if: ${{ env.DEPENDENCY_COUNT > 0 || env.CODE_ANALYSIS_COUNT > 0 || env.IMAGE_COUNT > 0 || env.MANIFEST_COUNT > 0 }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: ${{ env.MESSAGE }}
+
+      - name: Send message on failure
+        if: ${{ failure() }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
