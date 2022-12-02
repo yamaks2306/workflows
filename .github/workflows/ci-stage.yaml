@@ -279,7 +279,7 @@ jobs:
           mode: 'init'
           url: ${{ secrets.dd_sec_url }}
           token: ${{ secrets.dd_sec_key }}
-          product_type: ${{ inputs.product__type }}
+          product_type: ${{ inputs.product_type }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v3
