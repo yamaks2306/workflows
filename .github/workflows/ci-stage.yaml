@@ -207,7 +207,7 @@ jobs:
         uses: fjogeleit/yaml-update-action@main
         with:
           valueFile: 'helm/${{ env.APP_NAME }}/stage-values.yaml'
-          propertyPath: 'deployment.image.tag'
+          propertyPath: 'image.tag'
           value: ${{ needs.build.outputs.docker_tag }}
           repository: ${{ inputs.deploy_repository }}
           workDir: ${{ inputs.deploy_local_path }}
