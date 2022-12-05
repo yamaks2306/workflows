@@ -222,7 +222,7 @@ jobs:
 
       - name: Lint helm
         run: |
-          helm lint ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}
+          helm lint ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/stage-values.yaml
 
       - name: Generate manifests with Helm
         run: | 
