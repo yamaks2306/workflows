@@ -351,7 +351,7 @@ jobs:
           The code analysis scan found ${{ env.CODE_ANALYSIS_COUNT }} vulnerabilities.
           The image scan found ${{ env.IMAGE_COUNT }} vulnerabilities (CRITICAL and HIGH).
           The manifest analysis scan found ${{ env.MANIFEST_COUNT }} vulnerabilities.
-          See details: ${{ secrets.DD_SEC_URL }}/engagement/${{ env.DD_ENGAGEMENT_ID }}
+          See details: ${{ secrets.DD_SEC_URL }}/engagement/${{ steps.init.outputs.engagement_id }}
           EOF
           }
           echo MESSAGE=$(get_message) >> $GITHUB_ENV
