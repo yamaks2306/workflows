@@ -15,6 +15,12 @@ on:
       product_type:
         type: string
         required: true
+      public_path:
+        type: string
+        required: false
+      service_url:
+        type: string
+        required: false
       
     secrets:
       tg_token:
@@ -129,8 +135,9 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v3
         with:
-          build-args:
-            target=stage
+          build-args: |
+            PUBLIC_PATH=${{ inputs.public_path }}
+            SERVICE_URL=${{ inputs.service_url }}
           push: true
           context: .
           file: ./Dockerfile
