@@ -24,6 +24,9 @@ on:
       gtm:
         type: string
         required: false
+      target:
+        type: string
+        required: false
       
     secrets:
       tg_token:
@@ -142,6 +145,7 @@ jobs:
             PUBLIC_PATH=${{ inputs.public_path }}
             SERVICE_URL=${{ inputs.service_url }}
             GTM=${{ inputs.gtm }}
+            target=${{ inputs.target }}
           push: true
           context: .
           file: ./Dockerfile
