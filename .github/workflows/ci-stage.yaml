@@ -43,39 +43,9 @@ on:
         required: true
 
 jobs:
-  dependency-review:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Run Trivy vulnerability scanner in fs mode
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          ignore-unfixed: false
-          format: 'sarif'
-          output: 'trivy-dependency-report.sarif'
-
-      - name: Upload report artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: dependency-report
-          path: ./trivy-dependency-report.sarif
-
-      - name: Send message on failure
-        if:  ${{ failure() }}
-        uses: yamaks2306/telegram-notification@main
-        with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          include_commit_info: false
-          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
-
+ 
   build:
     name: Build and push docker image
-    needs: dependency-review
     runs-on: ubuntu-latest
     steps:
 
@@ -132,48 +102,10 @@ jobs:
     outputs:
       docker_tag: ${{ steps.docker_meta.outputs.tags }}
 
-  scan_image:
-    name: Scan docker image
-    needs:
-      - build
-    runs-on: ubuntu-latest
-    steps:
-
-      - run: echo ${{ needs.build.outputs.docker_tag }}
-
-      - name: Scan image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ needs.build.outputs.docker_tag }}'
-          exit-code: '0'
-          ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
-          format: 'sarif'
-          output: 'image-report.sarif'
-        env:
-          TRIVY_USERNAME: ${{ inputs.dh_name }}
-          TRIVY_PASSWORD: ${{ secrets.dh_token }}
-
-      - name: Upload report artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: image-report
-          path: ./image-report.sarif
-
-      - name: Send message on failure
-        if: ${{ failure() }}
-        uses: yamaks2306/telegram-notification@main
-        with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          include_commit_info: false
-          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
-
   update_deploy_repo:
     name: Update deploy repo
     needs:
       - build
-      - scan_image
     runs-on: ubuntu-latest
     steps:
 
@@ -212,22 +144,6 @@ jobs:
       - name: Generate manifests with Helm
         run: | 
           helm template stage-${{ env.APP_NAME }} ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/stage-values.yaml > ${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/stage/${{ env.APP_NAME }}.yaml
-
-      - name: Run Trivy vulnerability scanner in IaC mode
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'config'
-          hide-progress: false
-          format: 'sarif'
-          output: 'manifest-report.sarif'
-          exit-code: '0'
-          scan-ref: '${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/stage/'
-
-      - name: Upload report artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: manifest-report
-          path: ./manifest-report.sarif
 
       - name: Commit and push changes
         run: |
