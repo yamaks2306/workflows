@@ -98,7 +98,7 @@ jobs:
           echo APP_NAME=$(awk -F "/" '{print $2}' <<< ${{ github.repository }}) >> $GITHUB_ENV
 
       - name: Checkout configs repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           repository: ${{ inputs.deploy_repository }}
           path: ${{ inputs.deploy_local_path }}
