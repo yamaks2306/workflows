@@ -1,4 +1,4 @@
-name: Stage CI pipeline
+name: Draft release
 
 on:
   workflow_call:
@@ -15,19 +15,10 @@ on:
       product_type:
         type: string
         required: true
-      public_path:
-        type: string
-        required: false
-      service_url:
-        type: string
-        required: false
-      gtm:
-        type: string
-        required: false
       target:
         type: string
         required: false
-      
+
     secrets:
       tg_token:
         required: true
@@ -38,19 +29,19 @@ on:
       deploy_repo_ssh_key:
         required: true
       dd_sec_url:
-        required: true
+        required: false
       dd_sec_key:
-        required: true
+        required: false
 
 jobs:
-  
+
   build:
     name: Build and push docker image
     runs-on: ubuntu-latest
     steps:
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set docker image name
         run: |
@@ -58,33 +49,30 @@ jobs:
 
       - name: Docker meta
         id: docker_meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
           images: ${{ env.DOCKER_IMAGE_NAME }}
           flavor: |
             latest=false
-          tags: |
+          tags: 
             type=semver,pattern={{version}}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ inputs.dh_name }}
           password: ${{ secrets.dh_token }}
 
       - name: Build and push
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           build-args: |
-            PUBLIC_PATH=${{ inputs.public_path }}
-            SERVICE_URL=${{ inputs.service_url }}
-            GTM=${{ inputs.gtm }}
             target=${{ inputs.target }}
           push: true
           context: .
@@ -102,7 +90,7 @@ jobs:
           message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
 
     outputs:
-      docker_tag: ${{ steps.docker_meta.outputs.tags }}
+      docker_tag: ${{ steps.docker_meta.outputs.tags }} 
 
 
   update_deploy_repo:
@@ -117,7 +105,7 @@ jobs:
           echo APP_NAME=$(awk -F "/" '{print $2}' <<< ${{ github.repository }}) >> $GITHUB_ENV
 
       - name: Checkout configs repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: ${{ inputs.deploy_repository }}
           path: ${{ inputs.deploy_local_path }}
@@ -126,7 +114,7 @@ jobs:
       - name: Update image version
         uses: fjogeleit/yaml-update-action@main
         with:
-          valueFile: 'helm/${{ env.APP_NAME }}/production-values.yaml'
+          valueFile: 'helm/${{ env.APP_NAME }}/stage-values.yaml'
           propertyPath: 'image.tag'
           value: ${{ needs.build.outputs.docker_tag }}
           repository: ${{ inputs.deploy_repository }}
@@ -142,11 +130,11 @@ jobs:
 
       - name: Lint helm
         run: |
-          helm lint ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/production-values.yaml
+          helm lint ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/stage-values.yaml
 
       - name: Generate manifests with Helm
         run: | 
-          helm template production-${{ env.APP_NAME }} ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/production-values.yaml > ${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/production/${{ env.APP_NAME }}.yaml
+          helm template stage-${{ env.APP_NAME }} ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/stage-values.yaml > ${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/stage/${{ env.APP_NAME }}.yaml
 
       - name: Run Trivy vulnerability scanner in IaC mode
         uses: aquasecurity/trivy-action@master
@@ -156,7 +144,7 @@ jobs:
           format: 'sarif'
           output: 'manifest-report.sarif'
           exit-code: '0'
-          scan-ref: '${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/production/'
+          scan-ref: '${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/stage/'
 
       - name: Upload report artifact
         uses: actions/upload-artifact@v3
@@ -175,10 +163,50 @@ jobs:
           git commit -m 'Image version updated ${{ needs.build.outputs.docker_tag }}'
           git push
 
-      - name: Notify Telegram
+      - name: Send message on failure
+        if: ${{ failure() }}
         uses: yamaks2306/telegram-notification@main
-        if: always()
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+
+
+  draft_release:
+    needs:
+      - build
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Draft release
+        id: draft_release
+        uses: release-drafter/release-drafter@v5
+        with:
+          config-name: release-drafter.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Send message on failure
+        if: ${{ failure() }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+
+      - name: Send message on success
+        if: ${{ success() }}
+        uses: yamaks2306/telegram-notification@main
         with:
           token: ${{ secrets.tg_token }}
           chat_id: ${{ secrets.tg_chat_id }}
           docker_tags: ${{ needs.build.outputs.docker_tag }}
+          message: 'The draft release ${{ steps.draft_release.outputs.name }} was created successfully. The staging environments configuration was updated with pre-release image ${{ needs.build.outputs.docker_tag }}'
