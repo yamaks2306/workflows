@@ -57,7 +57,7 @@ jobs:
         with:
           valueFile: 'helm/${{ env.APP_NAME }}/production-values.yaml'
           propertyPath: 'image.tag'
-          value: ${{ needs.build.outputs.docker_tag }}
+          value: ${{ steps.docker_meta.outputs.tags }}
           repository: ${{ inputs.deploy_repository }}
           workDir: ${{ inputs.deploy_local_path }}
           updateFile: true
@@ -101,7 +101,7 @@ jobs:
           git config user.name github-action
           git config user.email github-actions@github.com
           git add .
-          git commit -m 'Image version updated ${{ needs.build.outputs.docker_tag }}'
+          git commit -m 'Image version updated ${{ steps.docker_meta.outputs.tags }}'
           git push
 
       - name: Notify Telegram
@@ -110,6 +110,6 @@ jobs:
         with:
           token: ${{ secrets.tg_token }}
           chat_id: ${{ secrets.tg_chat_id }}
-          docker_tags: ${{ needs.build.outputs.docker_tag }}
+          docker_tags: ${{ steps.docker_meta.outputs.tags }}
 
 

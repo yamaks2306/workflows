@@ -28,10 +28,10 @@ on:
         required: true
       deploy_repo_ssh_key:
         required: true
-      dd_sec_url:
-        required: false
-      dd_sec_key:
-        required: false
+      # dd_sec_url:
+      #   required: false
+      # dd_sec_key:
+      #   required: false
 
 jobs:
 
