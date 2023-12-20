@@ -54,6 +54,7 @@ jobs:
           images: ${{ env.DOCKER_IMAGE_NAME }}
           flavor: |
             latest=false
+            suffix=-rc,onlatest=false
           tags: 
             type=semver,pattern={{version}}
 

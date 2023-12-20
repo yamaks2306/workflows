@@ -26,14 +26,17 @@ on:
 
 jobs:
 
-  update_production_configurations:
+  build:
+    name: Build and push docker image
     runs-on: ubuntu-latest
     steps:
 
-      - name: Setup variables
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set docker image name
         run: |
           echo DOCKER_IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]') >> $GITHUB_ENV
-          echo APP_NAME=$(awk -F "/" '{print $2}' <<< ${{ github.repository }}) >> $GITHUB_ENV
 
       - name: Docker meta
         id: docker_meta
@@ -45,8 +48,48 @@ jobs:
           tags: 
             type=semver,pattern={{version}}
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.dh_name }}
+          password: ${{ secrets.dh_token }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          build-args: |
+            target=${{ inputs.target }}
+          push: true
+          context: .
+          file: ./Dockerfile
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+
+      - name: Send message on failure
+        if: ${{ failure() }}
+        uses: yamaks2306/telegram-notification@main
+        with:
+          token: ${{ secrets.tg_token }}
+          chat_id: ${{ secrets.tg_chat_id }}
+          include_commit_info: false
+          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+
+    outputs:
+      docker_tag: ${{ steps.docker_meta.outputs.tags }} 
+
+  update_production_configurations:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+
       - name: Checkout configs repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: ${{ inputs.deploy_repository }}
           path: ${{ inputs.deploy_local_path }}
@@ -57,7 +100,7 @@ jobs:
         with:
           valueFile: 'helm/${{ env.APP_NAME }}/production-values.yaml'
           propertyPath: 'image.tag'
-          value: ${{ steps.docker_meta.outputs.tags }}
+          value: ${{ needs.build.outputs.docker_tag }}
           repository: ${{ inputs.deploy_repository }}
           workDir: ${{ inputs.deploy_local_path }}
           updateFile: true
@@ -101,7 +144,7 @@ jobs:
           git config user.name github-action
           git config user.email github-actions@github.com
           git add .
-          git commit -m 'Image version updated ${{ steps.docker_meta.outputs.tags }}'
+          git commit -m 'Image version updated ${{ needs.build.outputs.docker_tag }}
           git push
 
       - name: Notify Telegram
@@ -110,6 +153,6 @@ jobs:
         with:
           token: ${{ secrets.tg_token }}
           chat_id: ${{ secrets.tg_chat_id }}
-          docker_tags: ${{ steps.docker_meta.outputs.tags }}
+          docker_tags: ${{ needs.build.outputs.docker_tag }}
 
 
