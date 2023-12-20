@@ -15,6 +15,9 @@ on:
       product_type:
         type: string
         required: true
+      target:
+        type: string
+        required: false
 
     secrets:
       tg_token:
