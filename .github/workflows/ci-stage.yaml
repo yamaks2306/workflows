@@ -20,13 +20,11 @@ on:
         required: false
       
     secrets:
-      tg_token:
-        required: true
-      tg_chat_id:
-        required: true
       dh_token:
         required: true
       deploy_repo_ssh_key:
+        required: true
+      discord_webhook_url:
         required: true
 
 jobs:
@@ -76,12 +74,9 @@ jobs:
 
       - name: Send message on failure
         if: ${{ failure() }}
-        uses: yamaks2306/telegram-notification@main
+        uses: sarisia/actions-status-discord@v1
         with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          include_commit_info: false
-          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+          webhook: ${{ secrets.discord_webhook_url }}
 
     outputs:
       docker_tag: ${{ steps.docker_meta.outputs.tags }}
@@ -140,10 +135,9 @@ jobs:
           git commit -m 'Image version updated ${{ needs.build.outputs.docker_tag }}'
           git push
 
-      - name: Notify Telegram
-        uses: yamaks2306/telegram-notification@main
-        if: always()
+      - name: Send notification
+        if: ${{ always() }}
+        uses: sarisia/actions-status-discord@v1
         with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          docker_tags: ${{ needs.build.outputs.docker_tag }}
+          webhook: ${{ secrets.discord_webhook_url }}
+          description: 'Docker image: ${{ needs.build.outputs.docker_tag }}'
