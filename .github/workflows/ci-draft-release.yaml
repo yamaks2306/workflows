@@ -20,18 +20,13 @@ on:
         required: false
 
     secrets:
-      tg_token:
-        required: true
-      tg_chat_id:
-        required: true
       dh_token:
         required: true
       deploy_repo_ssh_key:
         required: true
-      # dd_sec_url:
-      #   required: false
-      # dd_sec_key:
-      #   required: false
+      discord_webhook_url:
+        required: true
+
 
 jobs:
 
@@ -83,12 +78,9 @@ jobs:
 
       - name: Send message on failure
         if: ${{ failure() }}
-        uses: yamaks2306/telegram-notification@main
+        uses: sarisia/actions-status-discord@v1
         with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          include_commit_info: false
-          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
+          webhook: ${{ secrets.discord_webhook_url }}
 
     outputs:
       docker_tag: ${{ steps.docker_meta.outputs.tags }} 
@@ -166,13 +158,9 @@ jobs:
 
       - name: Send message on failure
         if: ${{ failure() }}
-        uses: yamaks2306/telegram-notification@main
+        uses: sarisia/actions-status-discord@v1
         with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          include_commit_info: false
-          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
-
+          webhook: ${{ secrets.discord_webhook_url }}
 
   draft_release:
     needs:
@@ -194,20 +182,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Send message on failure
-        if: ${{ failure() }}
-        uses: yamaks2306/telegram-notification@main
+      - name: Send notification
+        if: ${{ always() }}
+        uses: sarisia/actions-status-discord@v1
         with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          include_commit_info: false
-          message: '💥💥💥 Job was failed! Repository: ${{ github.repository }}, workflow: ${{ github.workflow }}, Job: ${{ github.job }}'
-
-      - name: Send message on success
-        if: ${{ success() }}
-        uses: yamaks2306/telegram-notification@main
-        with:
-          token: ${{ secrets.tg_token }}
-          chat_id: ${{ secrets.tg_chat_id }}
-          docker_tags: ${{ needs.build.outputs.docker_tag }}
-          message: 'The draft release ${{ steps.draft_release.outputs.name }} was created successfully. The staging environments configuration was updated with pre-release image ${{ needs.build.outputs.docker_tag }}'
+          webhook: ${{ secrets.discord_webhook_url }}
+          description: 'Docker image: ${{ needs.build.outputs.docker_tag }}'
