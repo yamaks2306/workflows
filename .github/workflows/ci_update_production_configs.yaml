@@ -88,6 +88,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
+      - name: Set app name
+        run: |
+          echo APP_NAME=$(awk -F "/" '{print $2}' <<< ${{ github.repository }}) >> $GITHUB_ENV
+
       - name: Checkout configs repo
         uses: actions/checkout@v4
         with:
@@ -144,7 +148,7 @@ jobs:
           git config user.name github-action
           git config user.email github-actions@github.com
           git add .
-          git commit -m 'Image version updated ${{ needs.build.outputs.docker_tag }}
+          git commit -m 'Image version updated ${{ needs.build.outputs.docker_tag }}'
           git push
 
       - name: Send notification
