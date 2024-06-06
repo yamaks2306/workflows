@@ -3,9 +3,6 @@ name: Stage CI pipeline
 on:
   workflow_call:
     inputs:
-      dh_name:
-        type: string
-        required: true
       deploy_repository:
         type: string
         required: true
@@ -18,8 +15,13 @@ on:
       target:
         type: string
         required: false
+      registry:
+        type: string
+        required: true
       
     secrets:
+      dh_name:
+        required: true
       dh_token:
         required: true
       deploy_repo_ssh_key:
@@ -39,7 +41,9 @@ jobs:
 
       - name: Set docker image name
         run: |
-          echo DOCKER_IMAGE_NAME=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]') >> $GITHUB_ENV
+          REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')
+          REGISTRY=${{ inputs.registry }}
+          echo DOCKER_IMAGE_NAME=$REGISTRY/$REPOSITORY >> $GITHUB_ENV
 
       - name: Docker meta
         id: docker_meta
@@ -58,7 +62,8 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
-          username: ${{ inputs.dh_name }}
+          registry: ${{ inputs.registry }}
+          username: ${{ secrets.dh_name }}
           password: ${{ secrets.dh_token }}
 
       - name: Build and push
