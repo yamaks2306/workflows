@@ -58,10 +58,10 @@ jobs:
           CA_CRT: ${{ secrets.CA_CRT }}
         run: |
           sudo apt-get install ca-certificates
-          echo $CA_CRT | sudo tee /usr/local/share/ca-certificates/registry_ca.crt > /dev/null
+          echo $CA_CRT | base64 -d | sudo tee /usr/local/share/ca-certificates/registry_ca.crt > /dev/null
           sudo update-ca-certificates
           sudo mkdir -p /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}
-          echo $CA_CRT | sudo tee /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}/ca.crt > /dev/null
+          echo $CA_CRT | base64 -d | sudo tee /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}/ca.crt > /dev/null
 
       - name: Install Twingate
         run: |
