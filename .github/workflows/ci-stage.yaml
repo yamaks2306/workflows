@@ -28,6 +28,10 @@ on:
         required: true
       discord_webhook_url:
         required: true
+      twingate_key:
+        required: true
+      ca_crt:
+        required: true
 
 jobs:
  
@@ -55,13 +59,13 @@ jobs:
 
       - name: Setup custom cert
         env:
-          CRT: ${{ secrets.CA_CRT }}
+          CRT: ${{ secrets.ca_crt }}
         run: |
           sudo apt-get install ca-certificates
           echo "$CRT" | base64 -d | sudo tee /usr/local/share/ca-certificates/registry_ca.crt > /dev/null
           sudo update-ca-certificates
-          sudo mkdir -p /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}
-          echo "$CRT" | base64 -d | sudo tee /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}/ca.crt > /dev/null
+          sudo mkdir -p /etc/docker/certs.d/${{ inputs.registry }}
+          echo "$CRT" | base64 -d | sudo tee /etc/docker/certs.d/${{ inputs.registry }}/ca.crt > /dev/null
 
       - name: Install Twingate
         run: |
@@ -71,7 +75,7 @@ jobs:
 
       - name: Setup and start Twingate
         env:
-          TWINGATE_KEY: ${{ secrets.TWINGATE_SERVICE_KEY }}
+          TWINGATE_KEY: ${{ secrets.twingate_key }}
         run: |
           echo "$TWINGATE_KEY" | sudo twingate setup --headless=-
           sudo twingate start
