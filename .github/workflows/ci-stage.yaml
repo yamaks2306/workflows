@@ -55,13 +55,13 @@ jobs:
 
       - name: Setup custom cert
         env:
-          CA_CRT: ${{ secrets.CA_CRT }}
+          CRT: ${{ secrets.CA_CRT }}
         run: |
           sudo apt-get install ca-certificates
-          echo $CA_CRT | base64 -d | sudo tee /usr/local/share/ca-certificates/registry_ca.crt > /dev/null
+          echo "$CRT" | base64 -d | sudo tee /usr/local/share/ca-certificates/registry_ca.crt > /dev/null
           sudo update-ca-certificates
           sudo mkdir -p /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}
-          echo $CA_CRT | base64 -d | sudo tee /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}/ca.crt > /dev/null
+          echo "$CRT" | base64 -d | sudo tee /etc/docker/certs.d/${{ vars.DOCKER_REGISTRY }}/ca.crt > /dev/null
 
       - name: Install Twingate
         run: |
@@ -71,9 +71,9 @@ jobs:
 
       - name: Setup and start Twingate
         env:
-          TWINGATE_SERVICE_KEY: ${{ secrets.TWINGATE_SERVICE_KEY }}
+          TWINGATE_KEY: ${{ secrets.TWINGATE_SERVICE_KEY }}
         run: |
-          echo $TWINGATE_SERVICE_KEY | sudo twingate setup --headless=-
+          echo "$TWINGATE_KEY" | sudo twingate setup --headless=-
           sudo twingate start
 
       - name: (optional) Twingate status
