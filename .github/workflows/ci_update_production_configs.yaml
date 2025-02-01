@@ -28,6 +28,10 @@ on:
         required: true
       discord_webhook_url:
         required: true
+      twingate_key:
+        required: true
+      ca_crt:
+        required: true
 
 jobs:
 
@@ -55,11 +59,34 @@ jobs:
           tags: 
             type=semver,pattern={{version}}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Setup custom cert
+        env:
+          CRT: ${{ secrets.ca_crt }}
+        run: |
+          sudo apt-get install ca-certificates
+          echo "$CRT" | base64 -d | sudo tee /usr/local/share/ca-certificates/registry_ca.crt > /dev/null
+          sudo update-ca-certificates
+          sudo mkdir -p /etc/docker/certs.d/${{ inputs.registry }}
+          echo "$CRT" | base64 -d | sudo tee /etc/docker/certs.d/${{ inputs.registry }}/ca.crt > /dev/null
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install Twingate
+        run: |
+          echo "deb [trusted=yes] https://packages.twingate.com/apt/ /" | sudo tee /etc/apt/sources.list.d/twingate.list
+          sudo apt update -yq
+          sudo apt install -yq twingate
+
+      - name: Setup and start Twingate
+        env:
+          TWINGATE_KEY: ${{ secrets.twingate_key }}
+        run: |
+          echo "$TWINGATE_KEY" | sudo twingate setup --headless=-
+          sudo twingate start
+
+      - name: (optional) Twingate status
+        run: twingate status
+
+      - name: (optional) Twingate logs
+        run: journalctl -u twingate
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -68,22 +95,19 @@ jobs:
           username: ${{ secrets.dh_name }}
           password: ${{ secrets.dh_token }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          build-args: |
-            target=${{ inputs.target }}
-          push: true
-          context: .
-          file: ./Dockerfile
-          tags: ${{ steps.docker_meta.outputs.tags }}
-          labels: ${{ steps.docker_meta.outputs.labels }}
+      - name: Build Core image
+        run: |
+          docker build -t ${{ steps.docker_meta.outputs.tags }} -f Dockerfile .
+          docker push ${{ steps.docker_meta.outputs.tags }}
 
       - name: Send message on failure
         if: ${{ failure() }}
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.discord_webhook_url }}
+
+      - name: Stop Twingate
+        run: sudo twingate stop
 
     outputs:
       docker_tag: ${{ steps.docker_meta.outputs.tags }} 
