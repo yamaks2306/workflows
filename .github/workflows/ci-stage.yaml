@@ -93,9 +93,9 @@ jobs:
           username: ${{ secrets.dh_name }}
           password: ${{ secrets.dh_token }}
 
-      - name: Build Core image
+      - name: Build image
         run: |
-          docker build -t ${{ steps.docker_meta.outputs.tags }} -f Dockerfile .
+          docker build --build-arg target=${{ inputs.target }} -t ${{ steps.docker_meta.outputs.tags }} -f Dockerfile .
           docker push ${{ steps.docker_meta.outputs.tags }}
 
       - name: Send message on failure
