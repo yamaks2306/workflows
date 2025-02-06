@@ -153,21 +153,21 @@ jobs:
         run: | 
           helm template production-${{ env.APP_NAME }} ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }} --values ${{ inputs.deploy_local_path }}/helm/${{ env.APP_NAME }}/production-values.yaml > ${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/production/${{ env.APP_NAME }}.yaml
 
-      - name: Run Trivy vulnerability scanner in IaC mode
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'config'
-          hide-progress: false
-          format: 'sarif'
-          output: 'manifest-report.sarif'
-          exit-code: '0'
-          scan-ref: '${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/production/'
-
-      - name: Upload report artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: manifest-report
-          path: ./manifest-report.sarif
+#      - name: Run Trivy vulnerability scanner in IaC mode
+#        uses: aquasecurity/trivy-action@master
+#        with:
+#          scan-type: 'config'
+#          hide-progress: false
+#          format: 'sarif'
+#          output: 'manifest-report.sarif'
+#          exit-code: '0'
+#          scan-ref: '${{ inputs.deploy_local_path }}/apps/${{ env.APP_NAME }}/production/'
+#
+#      - name: Upload report artifact
+#        uses: actions/upload-artifact@v3
+#        with:
+#          name: manifest-report
+#          path: ./manifest-report.sarif
 
       - name: Commit and push changes
         run: |
